@@ -75,12 +75,16 @@ class AugProcessor(DataProcessor):
         """See base class."""
         return self._create_examples(
             self._read_tsv(os.path.join(data_dir, "dev.tsv")), "dev")
-    
+
     def get_labels(self, name):
         """add your dataset here"""
         ### 추가
-        if name in ['StyleTransfer']: ### 3진 분류
-            return ["0", "1", "2"]
+#         if name in ['StyleTransfer']: ### 3진 분류
+#             return ["0", "1", "2"]
+          
+        ### 추가
+        if name in ['StyleTransfer']: ### 2진 분류
+            return ["0", "1"]
 
 
         if name in ['stsa.binary', 'mpqa', 'rt-polarity', 'subj']:
@@ -89,7 +93,7 @@ class AugProcessor(DataProcessor):
             return ["0", "1", "2", "3", "4"]
         elif name in ['TREC']:
             return ["0", "1", "2", "3", "4", "5"]
-    
+
     def _create_examples(self, lines, set_type):
         """Create examples for the training and dev sets."""
         examples = []
@@ -105,28 +109,38 @@ class AugProcessor(DataProcessor):
 
 def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer):
     """Loads a data file into a list of 'InputBatch's."""
-    
+
     label_map = {}
     for (i, label) in enumerate(label_list):
         label_map[label] = i
-    
+
     features = []
     for (ex_index, example) in enumerate(examples):
         # The convention in BERT is:
         # tokens:   [CLS] is this jack ##son ##ville ? [SEP]
-        # type_ids: 0     0  0    0    0     0       0 0    
+        # type_ids: 0     0  0    0    0     0       0 0
+
+
+        ###print("*** 원 문장 : " + example.text_a + " (토크나이징 시작)")
         tokens_a = tokenizer._tokenize(example.text_a)
+        ### 바꿔주기 <토크나이저로 변환된 결과>
+        ###tokens_a = tokenizer(example.text_a)
         tokens_label = label_map[example.label]
         tokens, init_ids, input_ids, input_mask, segment_ids, masked_lm_labels = \
             extract_features(tokens_a, tokens_label, max_seq_length, tokenizer)
-        
+
+
+
+
+
+
         """convert label to label_id"""
         label_id = label_map[example.label]
 
         """consturct features"""
         features.append(
             InputFeature(
-                init_ids=init_ids,        
+                init_ids=init_ids,
                 input_ids=input_ids,
                 input_mask=input_mask,
                 segment_ids=segment_ids,
@@ -147,20 +161,20 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
 
 def construct_train_dataloader(train_examples, label_list, max_seq_length, train_batch_size, num_train_epochs, tokenizer, device):
     """construct dataloader for training data"""
-    
+
     num_train_steps = None
     global_step = 0
     train_features = convert_examples_to_features(
         train_examples, label_list, max_seq_length, tokenizer)
     num_train_steps = int(len(train_features) / train_batch_size * num_train_epochs)
-    
+
     all_init_ids = torch.tensor([f.init_ids for f in train_features], dtype=torch.long, device=device)
     all_input_ids = torch.tensor([f.input_ids for f in train_features], dtype=torch.long, device=device)
     all_input_mask = torch.tensor([f.input_mask for f in train_features], dtype=torch.long, device=device)
     all_segment_ids = torch.tensor([f.segment_ids for f in train_features], dtype=torch.long, device=device)
     all_masked_lm_labels = torch.tensor([f.masked_lm_labels for f in train_features], dtype=torch.long, device=device)
-    
-    tensor_dataset = TensorDataset(all_init_ids, all_input_ids, all_input_mask, 
+
+    tensor_dataset = TensorDataset(all_init_ids, all_input_ids, all_input_mask,
         all_segment_ids, all_masked_lm_labels)
     train_sampler = RandomSampler(tensor_dataset)
     train_dataloader = DataLoader(tensor_dataset, sampler=train_sampler, batch_size=train_batch_size)
@@ -168,7 +182,7 @@ def construct_train_dataloader(train_examples, label_list, max_seq_length, train
 
 def rev_wordpiece(str):
     """wordpiece function used in cbert"""
-    
+
     #print(str)
     if len(str) > 1:
         for i in range(len(str)-1, 0, -1):
@@ -185,7 +199,7 @@ def extract_features(tokens_a, tokens_label, max_seq_length, tokenizer):
 
     if len(tokens_a) > max_seq_length - 2:
         tokens_a = tokens_a[0: (max_seq_length - 2)]
-    
+
     tokens = []
     segment_ids = []
     tokens.append('[CLS]')
@@ -195,32 +209,60 @@ def extract_features(tokens_a, tokens_label, max_seq_length, tokenizer):
         segment_ids.append(tokens_label)
     tokens.append('[SEP]')
     segment_ids.append(tokens_label)
+    #####segment_ids = [tokens_label] * len()
 
     ## construct init_ids for each example
     init_ids = convert_tokens_to_ids(tokens, tokenizer)
+    ### 바꾸기 <init_ids (??)>
+    ###init_ids = tokens_a['input_ids']
 
-    ## construct input_ids for each example, we replace the word_id using 
+    ## construct input_ids for each example, we replace the word_id using
     ## the ids of masked words (mask words based on original sentence)
     masked_lm_probs = 0.15
     max_predictions_per_seq = 20
     rng = random.Random(12345)
-    original_masked_lm_labels = [-1] * max_seq_length
-    (output_tokens, masked_lm_positions, 
+    
+    ###original_masked_lm_labels = [-1] * max_seq_length
+    original_masked_lm_labels = [-100] * max_seq_length ### (최신 버전에 맞게 변경)
+    
+    (output_tokens, masked_lm_positions,
     masked_lm_labels) = create_masked_lm_predictions(
             tokens, masked_lm_probs, original_masked_lm_labels, max_predictions_per_seq, rng, tokenizer)
     input_ids = convert_tokens_to_ids(output_tokens, tokenizer)
+    ### 바꾸기 <정수 인코딩 결과>
+    ###input_ids = tokens_a['input_ids']
+
+
 
     # The mask has 1 for real tokens and 0 for padding tokens. Only real
     # tokens are attended to.
     input_mask = [1] * len(input_ids)
-    
+    ###input_mask = token_a['attention_mask']
+
     # Zero-pad up to the sequence length.
     while len(input_ids) < max_seq_length:
         init_ids.append(0)
         input_ids.append(0)
         input_mask.append(0)
         segment_ids.append(0)
-    
+        ### <문장을 구분하는 세그먼트 인코딩 결과> (현재의 입력은 문장이 두 개가 아니라 한 개이므로 여기서는 문장 길이만큼의 0 시퀀스를 얻습니다. 만약 문장이 두 개였다면 두번째 문장이 시작되는 구간부터는 1의 시퀀스가 나오게 되지만, 여기서는 해당되지 않습니다.)
+
+
+#     print("*** tokens_a ***")
+#     print(tokens_a)
+#     print("*** init_ids ***")
+#     print(len(init_ids), init_ids)
+#     print("*** input_ids ***")
+#     print(len(input_ids), input_ids)
+#     print("*** input_mask ***")
+#     print(len(input_mask), input_mask)
+#     print("*** segment_ids ***")
+#     print(len(segment_ids), segment_ids)
+
+#     print("*** masked_lm_labels ***")
+#     print(len(segment_ids), segment_ids)
+
+
     assert len(init_ids) == max_seq_length
     assert len(input_ids) == max_seq_length
     assert len(input_mask) == max_seq_length
@@ -228,32 +270,34 @@ def extract_features(tokens_a, tokens_label, max_seq_length, tokenizer):
 
     return tokens, init_ids, input_ids, input_mask, segment_ids, masked_lm_labels
 
+
 def convert_tokens_to_ids(tokens, tokenizer):
     """Converts tokens into ids using the vocab."""
     ids = []
     for token in tokens:
-        token_id = tokenizer._convert_token_to_id(token)
+        token_id = tokenizer._convert_token_to_id(token) ### _convert_token_to_id() 함수 사용 안함
         ids.append(token_id)
     return ids
 
-def create_masked_lm_predictions(tokens, masked_lm_probs, masked_lm_labels, 
+
+def create_masked_lm_predictions(tokens, masked_lm_probs, masked_lm_labels,
                                  max_predictions_per_seq, rng, tokenizer):
     """Creates the predictions for the masked LM objective."""
 
     #vocab_words = list(tokenizer.vocab.keys())
-    
+
     cand_indexes = []
     for (i, token) in enumerate(tokens):
         if token == "[CLS]" or token == "[SEP]":
             continue
         cand_indexes.append(i)
-    
+
     rng.shuffle(cand_indexes)
     len_cand = len(cand_indexes)
     output_tokens = list(tokens)
-    num_to_predict = min(max_predictions_per_seq, 
+    num_to_predict = min(max_predictions_per_seq,
                          max(1, int(round(len(tokens) * masked_lm_probs))))
-    
+
     masked_lm_positions = []
     covered_indexes = set()
     for index in cand_indexes:
@@ -274,8 +318,9 @@ def create_masked_lm_predictions(tokens, masked_lm_probs, masked_lm_labels,
             ## 10% of the time, replace with random word
             else:
                 masked_token = tokens[cand_indexes[rng.randint(0, len_cand - 1)]]
-                
+
         masked_lm_labels[index] = convert_tokens_to_ids([tokens[index]], tokenizer)[0]
+        ###masked_lm_labels[index] = tokenizer(tokens[index])['input_ids'][0]
         output_tokens[index] = masked_token
         masked_lm_positions.append(index)
     return output_tokens, masked_lm_positions, masked_lm_labels
