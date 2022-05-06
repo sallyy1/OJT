@@ -35,11 +35,13 @@ model = BertForMaskedLM.from_pretrained('skt/kobert-base-v1')
 '''
 
 ### [2]
+from transformers import BertTokenizer, BertModel, BertForMaskedLM
 from transformers import AutoTokenizer, AutoModelForMaskedLM
-tokenizer = AutoTokenizer.from_pretrained("monologg/kobert-lm")
-model = AutoModelForMaskedLM.from_pretrained("monologg/kobert-lm")
 
-from transformers import AdamW, WarmupLinearSchedule
+tokenizer = AutoTokenizer.from_pretrained("klue/bert-base", use_fast=False)
+model = AutoModelForMaskedLM.from_pretrained("klue/bert-base")
+
+from transformers import AdamW  ###, WarmupLinearSchedule
 ###
 
 
@@ -59,38 +61,39 @@ def main():
     parser = argparse.ArgumentParser()
 
     ## Required parameters
-    parser.add_argument("--data_dir", default="datasets", type=str, ### 내가 데이터셋을 놓은 파일 경로
+    parser.add_argument("--data_dir", default="datasets", type=str,  ### 내가 데이터셋을 놓은 파일 경로
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
     parser.add_argument("--output_dir", default="aug_data", type=str,
                         help="The output dir for augmented dataset.")
-    parser.add_argument("--save_model_dir", default="cbert_model", type=str, ### fine-tuning 완료한 모델 저장한 경로 (모델 가중치)
+    parser.add_argument("--save_model_dir", default="cbert_model", type=str,  ### fine-tuning 완료한 모델 저장한 경로 (모델 가중치)
                         help="The cache dir for saved model.")
     parser.add_argument("--bert_model", default="bert-base-uncased", type=str,
                         help="The path of pretrained bert model.")
-    parser.add_argument("--task_name", default="subj", type=str, ### StyleTransfer ?
+    parser.add_argument("--task_name", default="subj", type=str,  ### StyleTransfer ?
                         help="The name of the task to train.")
-    parser.add_argument("--max_seq_length", default=64, type=int, ### 64 또는 128
+    parser.add_argument("--max_seq_length", default=64, type=int,  ### 64 또는 128
                         help="The maximum total input sequence length after WordPiece tokenization. \n"
                              "Sequence longer than this will be truncated, and sequences shorter \n"
                              "than this wille be padded.")
     parser.add_argument("--do_lower_case", default=False, action='store_true',
                         help="Set this flag if you are using an uncased model.")
-    parser.add_argument("--train_batch_size", default=32, type=int, ### 128 또는 64
+    parser.add_argument("--train_batch_size", default=32, type=int,  ### 128 또는 64
                         help="Total batch size for training.")
     parser.add_argument("--learning_rate", default=5e-5, type=float,
                         help="The initial learning rate for Adam.")
-    parser.add_argument("--num_train_epochs", default=10.0, type=float, ### 100
+    parser.add_argument("--num_train_epochs", default=10.0, type=float,  ### 100
                         help="Total number of training epochs to perform.")
     parser.add_argument("--warmup_proportion", default=0.1, type=float,
                         help="Proportion of training to perform linear learning rate warmup for."
                              "E.g., 0.1 = 10%% of training.")
     parser.add_argument("--seed", type=int, default=42,
                         help="random seed for initialization")
-    parser.add_argument("--save_every_epoch", default=True, action='store_true') ### (cbert_augdata.py 에는 없고 cbert_finetune.py 에만 추가됨)
+    parser.add_argument("--save_every_epoch", default=True,
+                        action='store_true')  ### (cbert_augdata.py 에는 없고 cbert_finetune.py 에만 추가됨)
 
     args = parser.parse_args()
     print(args)
-    
+
     """prepare processors"""
     AugProcessor = cbert_utils.AugProcessor()
     processors = {
@@ -116,11 +119,30 @@ def main():
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
-    ## leveraging lastest bert module in Transformers to load pre-trained model tokenizer
-    #tokenizer = BertTokenizer.from_pretrained(args.bert_model) ### arg에서 설정한 BERT 모델의 토크나이저
-    
+    '''
+    ## leveraging lastest bert module in Transformers to load pre-trained model 
+
+    tokenizer = BertTokenizer.from_pretrained(args.bert_model)  ### arg에서 설정한 BERT 모델의 토크나이저
+    # (교체 해야 ??)
+
     ## leveraging lastest bert module in Transformers to load pre-trained model (weights)
-    #model = BertForMaskedLM.from_pretrained(args.bert_model) ### arg에서 설정한 BERT 모델 (마스킹용 Masked LM으로 사용할 모델 (?))
+    model = BertForMaskedLM.from_pretrained(args.bert_model)  ### arg에서 설정한 BERT 모델 (마스킹용 Masked LM으로 사용할 모델 (?))
+
+    tokenizer = AutoTokenizer.from_pretrained("monologg/kobert-lm")
+    model = AutoModelForMaskedLM.from_pretrained("monologg/kobert-lm")
+    '''
+
+    ### 추가 - 중요
+    if task_name == 'StyleTransfer':  ###
+        model.bert.embeddings.token_type_embeddings = torch.nn.Embedding(3, 768)  ###
+        model.bert.embeddings.token_type_embeddings.weight.data.normal_(mean=0.0, std=0.02)
+
+        num_added_token = 0
+        model.resize_token_embeddings(num_added_token + tokenizer.vocab_size)
+        print('************ 에러 해결 중 *************')
+        print(tokenizer)
+        print(tokenizer.vocab_size)
+        print(model)
 
     if task_name == 'stsa.fine':
         model.bert.embeddings.token_type_embeddings = torch.nn.Embedding(5, 768)
@@ -137,8 +159,8 @@ def main():
     ### 저자들은 train.tsv, dev.tsv를 사전에 따로 준비해, fine-tuning 훈련 시 read 함
     train_examples = processor.get_train_examples(args.data_dir)
     train_features, num_train_steps, train_dataloader = \
-        cbert_utils.construct_train_dataloader(train_examples, label_list, args.max_seq_length, 
-        args.train_batch_size, args.num_train_epochs, tokenizer, device)
+        cbert_utils.construct_train_dataloader(train_examples, label_list, args.max_seq_length,
+                                               args.train_batch_size, args.num_train_epochs, tokenizer, device)
 
     ## if you have a GPU, put everything on cuda
     model.cuda()
@@ -163,6 +185,10 @@ def main():
     if not os.path.exists(save_model_dir):
         os.mkdir(save_model_dir)
 
+
+    ### 직접 설정
+    save_model_dir = "cbert_model/StyleTransfer"
+
     for e in trange(int(args.num_train_epochs), desc="Epoch"):
         avg_loss = 0.
 
@@ -172,23 +198,30 @@ def main():
             """train generator at each batch"""
             optimizer.zero_grad()
             outputs = model(input_ids, input_mask, segment_ids,
-                    masked_lm_labels=masked_ids)
+                            labels=masked_ids)  ### (최신 버전에 맞게 변경)
+            ###masked_lm_labels=masked_ids)
             loss = outputs[0]
             loss.backward()
             avg_loss += loss.item()
             optimizer.step()
-            if (step + 1) % 50 == 0:
-                print("avg_loss: {}".format(avg_loss / 50))
+            
+            nanugi = 200 ### 50
+            if (step + 1) % nanugi == 0:
+                print("avg_loss: {}".format(avg_loss / nanugi))
                 avg_loss = 0
-        if args.save_every_epoch: ### arg 설정에 따라 매 에폭마다 저장
+                
+                
+        if args.save_every_epoch:  ### arg 설정에 따라 매 에폭마다 저장
             save_model_name = "BertForMaskedLM_" + task_name + "_epoch_" + str(e + 1)
-            save_model_path = os.path.join(save_model_dir, save_model_name) ## 경로 : "../style_cbert_model/BertForMaskedLM_StyleTransfer_epoch_해당 에폭"
+            save_model_path = os.path.join(save_model_dir,
+                                           save_model_name)  ## 경로 : "../style_cbert_model/BertForMaskedLM_StyleTransfer_epoch_해당 에폭"
             torch.save(model, save_model_path)
         else:
-            if (e + 1) % 10 == 0: ### arg 설정에 따라 10 에폭마다 저장
+            if (e + 1) % 10 == 0:  ### arg 설정에 따라 10 에폭마다 저장
                 save_model_name = "BertForMaskedLM_" + task_name + "_epoch_" + str(e + 1)
                 save_model_path = os.path.join(save_model_dir, save_model_name)
                 torch.save(model, save_model_path)
+
 
 if __name__ == "__main__":
     main()
