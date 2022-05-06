@@ -157,8 +157,8 @@ def read_text_dataset(name, vocab=None, dir="datasets"): ### (해당 함수를 �
     assert(name in ['TREC', 'stsa.binary', 'stsa.fine',
                     'custrev', 'mpqa', 'rt-polarity', 'subj'] + ['StyleTransfer']) ### 추가
     train_path = os.path.join(dir, name, "train.tsv") ### Trainer에서 dir도 "datasets"로 똑같이 정의되어 있긴 함.
-    eval_path = os.path.join("datasets", name, "dev.tsv") ### 사전에 나누어 구축해놔야 함 (?)
-    test_path = os.path.join("datasets", name, "test.tsv") ### 사전에 나누어 구축해놔야 함 (?)
+    eval_path = os.path.join(dir, name, "dev.tsv") ### 사전에 나누어 구축해놔야 함 (?)
+    test_path = os.path.join(dir, name, "test.tsv") ### 사전에 나누어 구축해놔야 함 (?)
 
     train = _read_tsv(train_path)
     eval = _read_tsv(eval_path)
