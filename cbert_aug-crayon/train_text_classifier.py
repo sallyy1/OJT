@@ -53,11 +53,11 @@ def train(dir="datasets", print_log=False):
             fine_grained=args.dataset.endswith('.fine'),
             vocab=vocab)
     elif args.dataset in ['TREC', 'stsa.binary', 'stsa.fine',
-                          'custrev', 'mpqa', 'rt-polarity', 'subj'] + ['StyleTransfer']: ## 추가
-        train, test, real_test, vocab = text_datasets.read_text_dataset(
-            args.dataset, vocab=None, dir=dir) ### text_datasets.py 의 read_text_dataset 함수의 리턴 값 :
-                                                    # return train("train.tsv"), eval("dev.tsv"), test("test.tsv"), vocab
-                                                    # 예를 들어, 8588 문장, 956 문장, 1062 문장 => 8 : 1: 1 비율
+                          'custrev', 'mpqa', 'rt-polarity', 'subj', 'StyleTransfer']: ## 추가
+        ### 선택한 토크나이저의 vocab으로 지정해줌 -> 실패 (다시 복귀)
+        train, test, real_test, vocab = text_datasets.read_text_dataset( args.dataset, vocab=None, dir=dir) ### text_datasets.py 의 read_text_dataset 함수의 리턴 값 :
+                                                                                                            # return train("train.tsv"), eval("dev.tsv"), test("test.tsv"), vocab
+                                                                                                            # 예를 들어, 8588 문장, 956 문장, 1062 문장 => 8 : 1: 1 비율
     n_class = len(set([int(d[1]) for d in train]))
     
     ## str.format() uses '{}' and ':' to replace '%'
