@@ -17,8 +17,9 @@ def split_text(text, char_based=False):
 def normalize_text(text):
     return text.strip().lower()
 
-
-def make_vocab(dataset, max_vocab_size=50000, min_freq=1):
+#### Vocab size 교체 해주자 !!
+def make_vocab(dataset, max_vocab_size = 32000, min_freq=1):
+#def make_vocab(dataset, max_vocab_size=50000, min_freq=1):
     counts = collections.defaultdict(int)
     for tokens, _ in dataset:
         for token in tokens:
